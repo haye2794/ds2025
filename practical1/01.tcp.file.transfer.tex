@@ -1,0 +1,218 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+% Thiết lập định dạng cho code
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    commentstyle=\color{gray},
+    showstringspaces=false
+}
+
+\title{TCP File Transfer Report}
+\author{Your Name \\ ICT Student}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+The purpose of this project is to implement a simple TCP-based file transfer system using a client-server architecture. The system allows one client to request a file from the server, which sends the requested file back to the client over a TCP connection. The project is implemented in C++ using sockets.
+
+\section{Protocol Design}
+The communication between the client and server follows a simple protocol:
+\begin{enumerate}
+    \item The server waits for a connection from the client.
+    \item The client connects to the server and sends the name of the file it wants to download.
+    \item The server checks if the file exists:
+    \begin{itemize}
+        \item If the file exists, the server sends the file's content to the client.
+        \item If the file does not exist, the server sends an error message.
+    \end{itemize}
+    \item The client receives the file (or error message) and saves it locally.
+\end{enumerate}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{protocol_design.png}
+    \caption{Protocol Design}
+    \label{fig:protocol}
+\end{figure}
+
+\section{System Organization}
+The system is divided into two main components:
+\begin{itemize}
+    \item \textbf{Server:} A program that listens for client connections, processes file requests, and sends the requested file.
+    \item \textbf{Client:} A program that connects to the server, requests a file, and saves the received data.
+\end{itemize}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{system_organization.png}
+    \caption{System Organization}
+    \label{fig:organization}
+\end{figure}
+
+\section{Code Implementation}
+
+\subsection{Server Code}
+The following code snippet implements the server:
+\begin{lstlisting}[language=C++,caption=Server Code]
+#include <iostream>
+#include <fstream>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+#define PORT 5001
+#define BUFFER_SIZE 1024
+
+int main() {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+
+    // Create socket
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("Socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Bind socket to port
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("Bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(server_fd, 3) < 0) {
+        perror("Listen failed");
+        exit(EXIT_FAILURE);
+    }
+
+    std::cout << "Server is listening on port " << PORT << "...\n";
+
+    if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+        perror("Accept failed");
+        exit(EXIT_FAILURE);
+    }
+
+    char buffer[BUFFER_SIZE] = {0};
+    read(new_socket, buffer, BUFFER_SIZE);
+
+    std::ifstream file(buffer, std::ios::binary);
+    if (!file) {
+        const char* error_message = "File not found";
+        send(new_socket, error_message, strlen(error_message), 0);
+        std::cerr << "File not found: " << buffer << "\n";
+    } else {
+        std::cout << "Sending file: " << buffer << "\n";
+        char file_buffer[BUFFER_SIZE];
+        while (!file.eof()) {
+            file.read(file_buffer, BUFFER_SIZE);
+            send(new_socket, file_buffer, file.gcount(), 0);
+        }
+        std::cout << "File transfer completed.\n";
+    }
+
+    close(new_socket);
+    close(server_fd);
+    return 0;
+}
+\end{lstlisting}
+
+\subsection{Client Code}
+The following code snippet implements the client:
+\begin{lstlisting}[language=C++,caption=Client Code]
+#include <iostream>
+#include <fstream>
+#include <cstring>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
+#define PORT 5001
+#define BUFFER_SIZE 1024
+
+int main() {
+    int sock = 0;
+    struct sockaddr_in serv_addr;
+    char buffer[BUFFER_SIZE] = {0};
+
+    // Create socket
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        std::cerr << "Socket creation error\n";
+        return -1;
+    }
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
+
+    // Connect to server
+    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+        std::cerr << "Invalid address / Address not supported\n";
+        return -1;
+    }
+
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        std::cerr << "Connection failed\n";
+        return -1;
+    }
+
+    std::string filename;
+    std::cout << "Enter the filename: ";
+    std::cin >> filename;
+
+    send(sock, filename.c_str(), filename.size(), 0);
+
+    std::ofstream output_file("received_" + filename, std::ios::binary);
+    if (!output_file) {
+        std::cerr << "Error creating file to save data.\n";
+        return -1;
+    }
+
+    std::cout << "Receiving file...\n";
+    int bytes_received;
+    while ((bytes_received = read(sock, buffer, BUFFER_SIZE)) > 0) {
+        output_file.write(buffer, bytes_received);
+    }
+
+    std::cout << "File received and saved as 'received_" << filename << "'\n";
+
+    output_file.close();
+    close(sock);
+    return 0;
+}
+\end{lstlisting}
+
+\section{Task Assignment}
+\begin{itemize}
+    \item \textbf{Member A:} Wrote the server code.
+    \item \textbf{Member B:} Wrote the client code.
+    \item \textbf{Member C:} Prepared the report and diagrams.
+\end{itemize}
+
+\section{Conclusion}
+The project successfully implemented a file transfer system over TCP using C++ sockets. The system demonstrates how a client-server model can handle file transfers efficiently.
+
+\end{document}
