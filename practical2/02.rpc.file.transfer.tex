@@ -1,0 +1,149 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+% Định dạng cho mã nguồn
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    commentstyle=\color{gray},
+    showstringspaces=false
+}
+
+\title{RPC File Transfer Report}
+\author{Your Name \\ ICT Student}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This project upgrades the TCP-based file transfer system to use **Remote Procedure Call (RPC)** for better abstraction and ease of use. Using RPC, the client can request a file directly by calling a remote method on the server, and the server handles the transfer seamlessly.
+
+\section{RPC Service Design}
+The RPC service implements the following methods:
+\begin{itemize}
+    \item \texttt{getFile(fileName: string) -> fileContent: bytes}:
+    \begin{itemize}
+        \item Takes the name of the requested file as input.
+        \item Returns the file content if the file exists, or an error message if the file does not exist.
+    \end{itemize}
+\end{itemize}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{rpc_service_design.png}
+    \caption{RPC Service Design}
+    \label{fig:rpc_service}
+\end{figure}
+
+\section{System Organization}
+The system consists of:
+\begin{itemize}
+    \item \textbf{RPC Server:} Implements the remote method \texttt{getFile}, handles file requests, and sends file data or error messages to the client.
+    \item \textbf{RPC Client:} Calls the remote method \texttt{getFile}, receives the file data, and saves it locally.
+\end{itemize}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{rpc_system_organization.png}
+    \caption{System Organization}
+    \label{fig:organization}
+\end{figure}
+
+\section{Code Implementation}
+
+\subsection{Server Code}
+The server code is implemented as follows:
+\begin{lstlisting}[language=C++,caption=RPC Server Code]
+#include <iostream>
+#include <rpc/rpc.h>
+#include <fstream>
+#include <cstring>
+
+#define FILE_TRANSFER_PROG ((rpcprog_t)0x31234567)
+#define FILE_TRANSFER_VERS ((rpcvers_t)1)
+#define GET_FILE_PROC ((rpcproc_t)1)
+
+char* get_file(char* file_name) {
+    static char file_content[1024];
+    std::ifstream file(file_name, std::ios::binary);
+
+    if (!file) {
+        snprintf(file_content, sizeof(file_content), "Error: File '%s' not found", file_name);
+    } else {
+        file.read(file_content, sizeof(file_content) - 1);
+        file_content[file.gcount()] = '\0';
+    }
+
+    return file_content;
+}
+
+int main() {
+    registerrpc(FILE_TRANSFER_PROG, FILE_TRANSFER_VERS, GET_FILE_PROC, 
+                (char*(*)(char*))get_file, (xdrproc_t)xdr_wrapstring, (xdrproc_t)xdr_wrapstring);
+
+    std::cout << "RPC Server is running...\n";
+    svc_run();
+    return 0;
+}
+\end{lstlisting}
+
+\subsection{Client Code}
+The client code is implemented as follows:
+\begin{lstlisting}[language=C++,caption=RPC Client Code]
+#include <iostream>
+#include <rpc/rpc.h>
+
+#define FILE_TRANSFER_PROG ((rpcprog_t)0x31234567)
+#define FILE_TRANSFER_VERS ((rpcvers_t)1)
+#define GET_FILE_PROC ((rpcproc_t)1)
+
+int main() {
+    CLIENT* client;
+    char* server_host = "127.0.0.1";
+    char file_name[256];
+    char* result;
+
+    client = clnt_create(server_host, FILE_TRANSFER_PROG, FILE_TRANSFER_VERS, "udp");
+    if (!client) {
+        clnt_pcreateerror(server_host);
+        return 1;
+    }
+
+    std::cout << "Enter the filename: ";
+    std::cin >> file_name;
+
+    result = get_file_1(file_name, client);
+
+    if (result) {
+        std::cout << "File content:\n" << result << std::endl;
+    } else {
+        clnt_perror(client, server_host);
+    }
+
+    clnt_destroy(client);
+    return 0;
+}
+\end{lstlisting}
+
+\section{Task Assignment}
+\begin{itemize}
+    \item \textbf{Member A:} Developed the RPC server code.
+    \item \textbf{Member B:} Developed the RPC client code.
+    \item \textbf{Member C:} Created the report and diagrams.
+\end{itemize}
+
+\section{Conclusion}
+The project successfully upgraded the TCP file transfer system to an RPC-based system, simplifying the communication process and demonstrating the flexibility of RPC.
+
+\end{document}
